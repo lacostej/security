@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'tempfile'
+
 describe Security::Command do
   describe '.run' do
     describe 'when the command succeeds' do
@@ -25,6 +27,29 @@ describe Security::Command do
 
     it 'should not relay what the command printed' do
       expect { Security::Command.run('echo quiet 1>&2') }.not_to output.to_stderr
+    end
+  end
+
+  describe '.run with several arguments' do
+    it 'should not go through a shell' do
+      # A shell would treat these as two commands. Passed as arguments they are
+      # what echo was given.
+      result = Security::Command.run('echo', 'one && echo two')
+      expect(result.stdout).to be == "one && echo two\n"
+    end
+
+    it 'should need no escaping for a path containing a space' do
+      Tempfile.create(['a b', '.txt']) do |file|
+        file.write('contents')
+        file.flush
+        expect(Security::Command.run('cat', file.path).stdout).to be == 'contents'
+      end
+    end
+
+    it 'should report a missing command the same way' do
+      result = Security::Command.run('security-does-not-exist', 'argument')
+      expect(result.success?).to be false
+      expect(result.exitstatus).to be == 127
     end
   end
 

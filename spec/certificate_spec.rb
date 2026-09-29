@@ -3,9 +3,55 @@
 require 'tempfile'
 
 describe Certificate do
-  describe '#find' do
-    it 'should raise NotImplementedError' do
-      expect { Certificate.find }.to raise_error(NotImplementedError)
+  describe '.find' do
+    let(:output) do
+      <<~OUTPUT
+        SHA-256 hash: AA11
+        SHA-1 hash: BB22
+        -----BEGIN CERTIFICATE-----
+        one
+        -----END CERTIFICATE-----
+        SHA-256 hash: CC33
+        SHA-1 hash: DD44
+        -----BEGIN CERTIFICATE-----
+        two
+        -----END CERTIFICATE-----
+      OUTPUT
+    end
+
+    it 'should answer with the hashes and PEM of every match' do
+      expect(Security::Command).to receive(:run)
+        .with('security', 'find-certificate', '-a', '-c', 'Developer ID Installer', '-Z', '-p', '/a b.keychain')
+        .and_return(Security::Command::Result.new(output, '', Security::Command.run('true').status))
+
+      certificates = Certificate.find(name: 'Developer ID Installer', keychain: Keychain.new('/a b.keychain'))
+
+      expect(certificates.map(&:sha1)).to be == %w[BB22 DD44]
+      expect(certificates.map(&:sha256)).to be == %w[AA11 CC33]
+      expect(certificates.first.pem).to be == "-----BEGIN CERTIFICATE-----\none\n-----END CERTIFICATE-----\n"
+    end
+
+    it 'should raise when the keychain cannot be searched' do
+      status = instance_double(Process::Status, success?: false, exitstatus: 50)
+      allow(Open3).to receive(:capture3).and_return(['', "security: not allowed\n", status])
+
+      expect { Certificate.find(name: 'x') }.to raise_error(Security::Error, /not allowed/)
+    end
+  end
+
+  describe '.find against the real tool' do
+    it 'should find an imported certificate by part of its name' do
+      RealSecurity.with_certificate do |cert, _key|
+        RealSecurity.with_keychain do |keychain|
+          Certificate.import(cert, keychain: keychain)
+
+          found = Certificate.find(name: 'gem spec', keychain: keychain)
+
+          expect(found.map(&:name)).to be == ['security gem spec']
+          expect(found.first.pem).to be == File.read(cert)
+          expect(Certificate.find(name: 'nothing like it', keychain: keychain)).to be_empty
+        end
+      end
     end
   end
 
@@ -16,7 +62,7 @@ describe Certificate do
   end
 
   describe 'an instance' do
-    subject { Certificate.send(:new) }
+    subject { Certificate.send(:new, sha1: nil, sha256: nil, pem: nil) }
 
     describe '#delete!' do
       it 'should raise NotImplementedError' do
@@ -34,7 +80,7 @@ describe Certificate do
     let(:succeeded) { Security::Command.run('true') }
 
     it 'should import into the named keychain and trust the signing tools' do
-      expect(Security::Command).to receive(:relay).with(
+      expect(Security::Command).to receive(:run).with(
         'security', 'import', '/tmp/a cert.cer', '-k', '/tmp/a.keychain',
         '-T', '/usr/bin/codesign', '-T', '/usr/bin/security',
         '-T', '/usr/bin/productbuild', '-T', '/usr/bin/productsign'
@@ -44,7 +90,7 @@ describe Certificate do
     end
 
     it 'should accept a Keychain as well as a filename' do
-      expect(Security::Command).to receive(:relay)
+      expect(Security::Command).to receive(:run)
         .with('security', 'import', 'c.p12', '-k', '/tmp/a.keychain', any_args)
         .and_return(succeeded)
 
@@ -52,7 +98,7 @@ describe Certificate do
     end
 
     it 'should pass the file password and format when given' do
-      expect(Security::Command).to receive(:relay)
+      expect(Security::Command).to receive(:run)
         .with('security', 'import', 'c.p12', '-k', 'k', '-P', 'secret', '-f', 'pkcs12', any_args)
         .and_return(succeeded)
 
@@ -60,7 +106,7 @@ describe Certificate do
     end
 
     it 'should allow the trusted applications to be replaced' do
-      expect(Security::Command).to receive(:relay)
+      expect(Security::Command).to receive(:run)
         .with('security', 'import', 'c.cer', '-k', 'k', '-T', '/usr/bin/codesign')
         .and_return(succeeded)
 
@@ -76,6 +122,16 @@ describe Certificate do
           expect(Certificate.import(cert, keychain: keychain)).to be true
 
           expect(RealSecurity.certificates_in(keychain)).to include('security gem spec')
+        end
+      end
+    end
+
+    it 'should count a certificate the keychain already holds as imported' do
+      RealSecurity.with_certificate do |cert, _key|
+        RealSecurity.with_keychain do |keychain|
+          expect(Certificate.import(cert, keychain: keychain)).to be true
+
+          expect { expect(Certificate.import(cert, keychain: keychain)).to be true }.not_to output.to_stderr
         end
       end
     end

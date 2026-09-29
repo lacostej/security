@@ -126,22 +126,25 @@ describe Certificate do
       end
     end
 
-    it 'should count a certificate the keychain already holds as imported' do
+    it 'should raise DuplicateItemError for a certificate the keychain already holds' do
       RealSecurity.with_certificate do |cert, _key|
         RealSecurity.with_keychain do |keychain|
           expect(Certificate.import(cert, keychain: keychain)).to be true
 
-          expect { expect(Certificate.import(cert, keychain: keychain)).to be true }.not_to output.to_stderr
+          expect { Certificate.import(cert, keychain: keychain) }
+            .to raise_error(Security::DuplicateItemError, /already exists/)
         end
       end
     end
 
-    it 'should report a failure for a file that is not a certificate' do
+    it 'should raise Error, not DuplicateItemError, for a file that is not a certificate' do
       Tempfile.create('not-a-cert') do |file|
         file.write('nonsense')
         file.flush
         RealSecurity.with_keychain do |keychain|
-          expect(Certificate.import(file.path, keychain: keychain)).to be false
+          expect { Certificate.import(file.path, keychain: keychain) }.to raise_error(Security::Error) do |error|
+            expect(error).not_to be_a(Security::DuplicateItemError)
+          end
         end
       end
     end

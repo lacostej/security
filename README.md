@@ -83,12 +83,15 @@ end
 `ProvisioningProfile.decode` raise `Security::Error` on failure in the same way.
 `Certificate.find` and `Identity.find` return an empty array when nothing matched.
 
-The methods that change the keychain — `add`, `delete`, `Certificate.import`
-and the `Keychain` setters — return `true` or `false` and print what the tool
-reported, the way `Kernel#system` does. `Certificate.import` also returns `true`
-for an item the keychain already holds. `Keychain#set_key_partition_list` raises
-instead, since a wrong keychain password is its usual failure and the caller
-needs the output to tell it apart.
+The methods that change the keychain — `add`, `delete` and the `Keychain`
+setters — return `true` or `false` and print what the tool reported, the way
+`Kernel#system` does. Two raise instead, because the caller needs to know why
+they failed:
+
+- `Certificate.import` raises `Security::DuplicateItemError` when the keychain
+  already holds the item, and `Security::Error` for any other failure.
+- `Keychain#set_key_partition_list` raises `Security::Error`, most often for a
+  wrong keychain password.
 
 ## License
 

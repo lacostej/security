@@ -57,8 +57,8 @@ module Security
       end
 
       # Imports a certificate or identity file into `keychain`. `password` is
-      # the one protecting the file, not the keychain's. An item the keychain
-      # already holds counts as imported.
+      # the one protecting the file, not the keychain's. Raises
+      # DuplicateItemError when the keychain already holds it.
       def import(path, keychain:, password: nil, format: nil,
                  trusted_applications: DEFAULT_TRUSTED_APPLICATIONS)
         command = ['security', 'import', path.to_s, '-k', filename_for(keychain)]
@@ -67,10 +67,11 @@ module Security
         trusted_applications.each { |application| command += ['-T', application] }
 
         result = Command.run(*command)
-        return true if result.success? || result.stderr.include?(ALREADY_EXISTS)
+        return true if result.success?
 
-        warn result.stderr.chomp unless result.stderr.empty?
-        false
+        # Every failure exits 1, so only the message tells a duplicate apart.
+        error = result.stderr.include?(ALREADY_EXISTS) ? DuplicateItemError : Error
+        raise error.new(result.exitstatus, result.stderr)
       end
 
       private

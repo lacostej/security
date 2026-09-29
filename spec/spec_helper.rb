@@ -43,6 +43,19 @@ module RealSecurity
     end
   end
 
+  # A certificate and its key as one PKCS#12 file. /usr/bin/openssl is
+  # LibreSSL, whose default encryption `security import` accepts.
+  def with_identity(password)
+    with_certificate do |cert, key|
+      Dir.mktmpdir do |dir|
+        identity = File.join(dir, 'identity.p12')
+        run('/usr/bin/openssl', 'pkcs12', '-export', '-inkey', key, '-in', cert,
+            '-out', identity, '-passout', "pass:#{password}")
+        yield identity
+      end
+    end
+  end
+
   def with_signed_blob(contents)
     with_certificate do |cert, key|
       Dir.mktmpdir do |dir|

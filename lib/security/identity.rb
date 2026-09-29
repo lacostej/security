@@ -3,13 +3,16 @@
 module Security
   # :nodoc:
   class Identity
-    attr_reader :sha1, :name
+    attr_reader :sha1, :name, :status
 
     private_class_method :new
 
-    def initialize(sha1, name)
+    # `status` is what `security` prints after the name for an identity it
+    # considers invalid, such as CSSMERR_TP_CERT_REVOKED, or nil.
+    def initialize(sha1, name, status = nil)
       @sha1 = sha1
       @name = name
+      @status = status
     end
 
     class << self
@@ -39,7 +42,9 @@ module Security
       # Finding none is not a failure: `security` prints "0 valid identities
       # found" and exits 0.
       def identities_from_output(output)
-        output.scan(/^\s*\d+\)\s+(\h+)\s+"(.*)"/).map { |sha1, name| new(sha1, name) }
+        output.scan(/^\s*\d+\)\s+(\h+)\s+"(.*)"(?:\s+\(([^()]*)\))?\s*$/).map do |sha1, name, status|
+          new(sha1, name, status)
+        end
       end
 
       def filename_for(keychain)

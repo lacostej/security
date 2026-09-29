@@ -27,6 +27,21 @@ describe Identity do
       expect(identities.first.name).to be == 'Apple Development: someone (TEAM123)'
     end
 
+    it 'should keep the status security prints after an invalid identity' do
+      listing = <<~OUTPUT
+        1) A1B2C3D4E5F60718293A4B5C6D7E8F9012345678 "Apple Development: someone (TEAM123)" (CSSMERR_TP_CERT_REVOKED)
+        2) 0F1E2D3C4B5A69788796A5B4C3D2E1F009876543 "Apple Distribution: "quoted" (TEAM123)"
+      OUTPUT
+      result = Security::Command::Result.new(listing, '', nil)
+      allow(result).to receive(:success?).and_return(true)
+      allow(Security::Command).to receive(:run).and_return(result)
+
+      revoked, quoted = Identity.find
+      expect(revoked.name).to be == 'Apple Development: someone (TEAM123)'
+      expect(revoked.status).to be == 'CSSMERR_TP_CERT_REVOKED'
+      expect([quoted.name, quoted.status]).to be == ['Apple Distribution: "quoted" (TEAM123)', nil]
+    end
+
     it 'should ask for valid identities and the codesigning policy by default' do
       expect(Security::Command).to receive(:run)
         .with('security', 'find-identity', '-v', '-p', 'codesigning').and_return(found)
